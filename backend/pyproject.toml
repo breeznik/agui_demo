@@ -1,0 +1,28 @@
+[project]
+name = "src"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Nikhil Rao",email = "newraozxcode@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "uvicorn (>=0.38.0,<0.39.0)",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "langgraph (>=1.0.3,<2.0.0)",
+    "copilotkit (>=0.1.71,<0.2.0)",
+    "fastapi (==0.115.12)",
+    "langchain-openai (>=1.0.2,<2.0.0)"
+]
+
+[tool.poetry.scripts]
+start = "src.app:main"
+dev = "src.app:main"
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
