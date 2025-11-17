@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AG UI Experimental Console</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <div class="header-title">AG UI Experimental Console</div>
+        <div class="status-pill">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Agent idle</span>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="message-board" id="messageBoard">
+          <div class="empty-state" id="emptyState">
+            Start a conversation to see the live event stream here.
+          </div>
+        </section>
+
+        <section class="composer-shell">
+          <textarea
+            class="textarea"
+            id="messageInput"
+            placeholder="Send a message to the agent..."
+            rows="4"
+          ></textarea>
+
+          <div class="composer-actions">
+            <input
+              class="url-input"
+              type="text"
+              id="agentUrl"
+              value="http://localhost:8000/agent"
+              placeholder="Agent endpoint"
+            />
+
+            <button
+              type="button"
+              class="primary-button"
+              id="sendButton"
+              disabled
+            >
+              Send message
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

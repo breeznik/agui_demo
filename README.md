@@ -12,7 +12,8 @@ A minimal demo showing how AG-UI connects an AI-agent backend with a frontend in
 - AG-UI protocol (agent ↔ UI events)
 
 **Frontend stack**  
-- React.js  
+- React.js (in `frontend/`)
+- Vanilla JavaScript (in `frontend-vanilla/`)
 - AG-UI client (`httpAgent`)
 
 ### What AG-UI is  
@@ -56,11 +57,27 @@ poetry run dev
 
 ## Frontend Setup
 
+### React Version (frontend/)
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+Runs on `http://localhost:5173`
+
+### Vanilla JavaScript Version (frontend-vanilla/)
+
+```bash
+cd frontend-vanilla
+npm install
+npm run dev
+```
+
+Runs on `http://localhost:5174`
+
+Both frontends connect to the same backend and provide identical functionality.
 
 ## Project Structure
 
@@ -71,11 +88,17 @@ agui_demo/
 │   │   ├── app.py
 │   │   └── graph.py
 │   └── pyproject.toml
-└── frontend/
+├── frontend/                    # React version
+│   ├── src/
+│   │   ├── Chat/
+│   │   │   └── ChatInterface.jsx
+│   │   └── main.jsx
+│   └── package.json
+└── frontend-vanilla/            # Vanilla JS version
     ├── src/
-    │   ├── Chat/
-    │   │   └── ChatInterface.jsx
-    │   └── main.jsx
+    │   ├── main.js
+    │   └── styles.css
+    ├── index.html
     └── package.json
 ```
 
@@ -83,5 +106,9 @@ agui_demo/
 
 * Basic AG-UI agent ↔ UI communication
 * Simple LangGraph workflow
-* React interface wired to AG-UI client
+* Two frontend implementations:
+  - **React**: Modern component-based UI
+  - **Vanilla JS**: Pure HTML/CSS/JS with no framework dependencies
 * HITL (Human-In-The-Loop)
+* Real-time message streaming
+* Agent interrupt handling
