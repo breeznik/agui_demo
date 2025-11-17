@@ -29,8 +29,7 @@ class UserInfoStruct(BaseModel):
     # full_name: Optional[str] = Field(None, description="user's full name")
     # email: Optional[str] = Field(None, description="user's email")
     human_input: bool = Field(
-        True,
-        description="make it true to ask human response and false to not",
+        False, description="make it true to ask human question false to continue."
     )
     message: Optional[str] = Field(None, description="AI messages to human")
 
