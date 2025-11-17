@@ -129,7 +129,9 @@ const styles = {
     fontWeight: 600,
     border: "none",
     cursor: isActive ? "pointer" : "not-allowed",
-    background: isActive ? "linear-gradient(135deg, #2563eb, #7c3aed)" : "#1e293b",
+    background: isActive
+      ? "linear-gradient(135deg, #2563eb, #7c3aed)"
+      : "#1e293b",
     color: "#f8fafc",
     transition: "transform 0.12s ease, box-shadow 0.12s ease",
     boxShadow: isActive ? "0 12px 30px rgba(59, 130, 246, 0.35)" : "none",
@@ -150,7 +152,7 @@ const findUnescapedQuoteIndex = (str) => {
   for (let i = 0; i < str.length; i++) {
     if (str[i] !== '"') continue;
     let bs = 0;
-    for (let j = i - 1; j >= 0 && str[j] === '\\'; j--) bs++;
+    for (let j = i - 1; j >= 0 && str[j] === "\\"; j--) bs++;
     if (bs % 2 === 0) return i; // not escaped
   }
   return -1;
@@ -172,6 +174,8 @@ const ChatInterface = () => {
   const [agentRunning, setAgentRunning] = useState(false);
   const agentRef = useRef(null);
   const messageBufferRef = useRef({});
+  const [interrupted, setInterrupted] = useState(null);
+  const [lastRunId, setLastRunId] = useState(null);
 
   useEffect(() => {
     const agent = new HttpAgent({
@@ -210,162 +214,206 @@ const ChatInterface = () => {
       return;
     }
 
-    if (isLoading) {
-      console.log("Agent already running; abort or wait for completion");
+    // Check if agent is running before starting new run
+    if (agentRunning) {
+      console.log("Agent still running, please wait");
       return;
     }
 
     const userMessage = {
       id: `user-${Date.now()}`,
-      text: trimmed,
       sender: "user",
+      text: trimmed,
       timestamp: new Date(),
     };
+
+    agent.messages.push({
+      role: "user",
+      content: trimmed,
+      id: userMessage.id,
+    });
 
     console.log("Dispatching user message", userMessage);
     setMessages((prev) => [...prev, userMessage]);
     setMessageText("");
 
+    // Set running state BEFORE calling runAgent
+    setAgentRunning(true);
+    setIsLoading(true);
+
     try {
       console.log("Agent messages before run:", agent.messages);
       console.log("Agent state before run:", agent.state);
 
-      const result = await agent.runAgent(
-        {},
-        {
-          onTextMessageStartEvent: (params) => {
-            console.log("Text message started", params.event.messageId);
-            // Initialize streaming state for this message
-            messageBufferRef.current[params.event.messageId] = {
-              buf: "",
-              capturing: false,
-              capturedText: "",
-              done: false,
-            };
-            
-            const newMessage = {
-              id: params.event.messageId,
-              text: "",
-              sender: "agent",
-              timestamp: new Date(),
-              type: "text",
-            };
-
-            console.log("Agent text message start", params.event);
-            setMessages((prev) => [...prev, newMessage]);
+      const payload = {};
+      if (interrupted) {
+        payload.resume = {
+          interruptId: interrupted,
+          payload: userMessage.text,
+        };
+        payload.forwardedProps = {
+          command: {
+            resume: userMessage.text,
           },
-          onTextMessageContentEvent: (params) => {
-            try {
-              console.log("Agent text delta", params.event);
-              const { delta, messageId } = params.event;
-              const state =
-                messageBufferRef.current[messageId] ||
-                (messageBufferRef.current[messageId] = {
-                  buf: "",
-                  capturing: false,
-                  capturedText: "",
-                  done: false,
-                });
+        };
+        // Remove: payload.runId = lastRunId;
+        setInterrupted(null);
+        setLastRunId(null);
+      }
+      const result = await agent.runAgent(payload, {
+        // Run lifecycle events
+        onRunStartedEvent: () => {
+          console.log("Agent run started");
+          setAgentRunning(true);
+          setIsLoading(true);
+        },
+        onRunFinishedEvent: () => {
+          console.log("Agent run finished");
+          // Clear all buffers
+          messageBufferRef.current = {};
+        },
+        onRunErrorEvent: (params) => {
+          console.error("Agent run error", params.event);
+          // Clear all buffers on error
+          messageBufferRef.current = {};
+          setAgentRunning(false);
+          setIsLoading(false);
+        },
+        onRunFinalized: (params) => {
+          setLastRunId(params.input.runId);
+          console.log("Run finalized", params);
+          setAgentRunning(false);
+          setIsLoading(false);
 
-              // Get string chunk
-              let chunk = "";
-              if (typeof delta === "string") {
-                chunk = delta;
-              } else {
-                const rawChunk = params.event?.rawEvent?.data?.chunk?.content;
-                if (typeof rawChunk === "string") chunk = rawChunk;
-                else if (Array.isArray(rawChunk)) {
-                  chunk = rawChunk
-                    .map((p) =>
-                      typeof p === "string"
-                        ? p
-                        : typeof p?.text === "string"
-                        ? p.text
-                        : typeof p?.content === "string"
-                        ? p.content
-                        : ""
-                    )
-                    .join("");
-                } else if (rawChunk && typeof rawChunk === "object") {
-                  if (typeof rawChunk.text === "string") chunk = rawChunk.text;
-                  else if (typeof rawChunk.content === "string") chunk = rawChunk.content;
-                }
+          // agent.abortController.abort()
+          // agent.current.abortRun();
+        },
+
+        // Message streaming events
+        onTextMessageStartEvent: (params) => {
+          console.log("Text message started", params.event.messageId);
+          // Initialize streaming state for this message
+          messageBufferRef.current[params.event.messageId] = {
+            buf: "",
+            capturing: false,
+            capturedText: "",
+            done: false,
+          };
+
+          const newMessage = {
+            id: params.event.messageId,
+            text: "",
+            sender: "agent",
+            timestamp: new Date(),
+            type: "text",
+          };
+
+          console.log("Agent text message start", params.event);
+          setMessages((prev) => [...prev, newMessage]);
+        },
+        onTextMessageContentEvent: (params) => {
+          try {
+            console.log("Agent text delta", params.event);
+            const { delta, messageId } = params.event;
+            const state =
+              messageBufferRef.current[messageId] ||
+              (messageBufferRef.current[messageId] = {
+                buf: "",
+                capturing: false,
+                capturedText: "",
+                done: false,
+              });
+
+            // Get string chunk
+            let chunk = "";
+            if (typeof delta === "string") {
+              chunk = delta;
+            } else {
+              const rawChunk = params.event?.rawEvent?.data?.chunk?.content;
+              if (typeof rawChunk === "string") chunk = rawChunk;
+              else if (Array.isArray(rawChunk)) {
+                chunk = rawChunk
+                  .map((p) =>
+                    typeof p === "string"
+                      ? p
+                      : typeof p?.text === "string"
+                      ? p.text
+                      : typeof p?.content === "string"
+                      ? p.content
+                      : ""
+                  )
+                  .join("");
+              } else if (rawChunk && typeof rawChunk === "object") {
+                if (typeof rawChunk.text === "string") chunk = rawChunk.text;
+                else if (typeof rawChunk.content === "string")
+                  chunk = rawChunk.content;
               }
+            }
 
-              if (!chunk || state.done) return;
+            if (!chunk || state.done) return;
 
-              state.buf += chunk;
+            state.buf += chunk;
 
-              // If not yet capturing, look for start of message value
-              if (!state.capturing) {
-                const startMatch = state.buf.match(/\"message\"\s*:\s*\"/);
-                if (!startMatch) return; // ignore anything before message key
+            // If not yet capturing, look for start of message value
+            if (!state.capturing) {
+              const startMatch = state.buf.match(/\"message\"\s*:\s*\"/);
+              if (!startMatch) return; // ignore anything before message key
 
-                state.capturing = true;
-                const startIndex = state.buf.indexOf(startMatch[0]) + startMatch[0].length;
-                const afterStart = state.buf.slice(startIndex);
-                const endIdx = findUnescapedQuoteIndex(afterStart);
-                const frag = endIdx >= 0 ? afterStart.slice(0, endIdx) : afterStart;
-                const toAppend = unescapeJsonFragment(frag);
-                if (toAppend) {
-                  state.capturedText += toAppend;
-                  setMessages((prev) =>
-                    prev.map((m) => (m.id === messageId ? { ...m, text: state.capturedText } : m))
-                  );
-                }
-                if (endIdx >= 0) state.done = true; // closed the string
-                return;
-              }
-
-              // Already capturing: append until closing quote
-              const endIdx = findUnescapedQuoteIndex(chunk);
-              const frag = endIdx >= 0 ? chunk.slice(0, endIdx) : chunk;
+              state.capturing = true;
+              const startIndex =
+                state.buf.indexOf(startMatch[0]) + startMatch[0].length;
+              const afterStart = state.buf.slice(startIndex);
+              const endIdx = findUnescapedQuoteIndex(afterStart);
+              const frag =
+                endIdx >= 0 ? afterStart.slice(0, endIdx) : afterStart;
               const toAppend = unescapeJsonFragment(frag);
               if (toAppend) {
                 state.capturedText += toAppend;
                 setMessages((prev) =>
-                  prev.map((m) => (m.id === messageId ? { ...m, text: state.capturedText } : m))
+                  prev.map((m) =>
+                    m.id === messageId ? { ...m, text: state.capturedText } : m
+                  )
                 );
               }
-              if (endIdx >= 0) state.done = true;
-            } catch (error) {
-              console.error("Error processing text delta:", error);
+              if (endIdx >= 0) state.done = true; // closed the string
+              return;
             }
-          },
-          onTextMessageEndEvent: (params) => {
-            console.log("Text message ended", params.event.messageId);
-            
-            // Clean up buffer
-            delete messageBufferRef.current[params.event.messageId];
-          },
-          onRunFinishedEvent: () => {
-            console.log("Agent run finished");
-            // Clear all buffers
-            messageBufferRef.current = {};
-            setAgentRunning(false);
-            setIsLoading(false);
-          },
-          onRunErrorEvent: (params) => {
-            console.error("Agent run error", params.event);
-            // Clear all buffers on error
-            messageBufferRef.current = {};
-            setAgentRunning(false);
-            setIsLoading(false);
-          },
-          onRunStartedEvent: () => {
-            console.log("Agent run started");
-            setAgentRunning(true);
-            setIsLoading(true);
-          },
-          onCustomEvent: (params) => {
-            console.log("Custom event received", params.event);
 
-            if (params.event.name === "on_interrupt") {
-              console.log("Agent interrupted", params);
+            // Already capturing: append until closing quote
+            const endIdx = findUnescapedQuoteIndex(chunk);
+            const frag = endIdx >= 0 ? chunk.slice(0, endIdx) : chunk;
+            const toAppend = unescapeJsonFragment(frag);
+            if (toAppend) {
+              state.capturedText += toAppend;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === messageId ? { ...m, text: state.capturedText } : m
+                )
+              );
             }
-          },
-        }
-      );
+            if (endIdx >= 0) state.done = true;
+          } catch (error) {
+            console.error("Error processing text delta:", error);
+          }
+        },
+        onTextMessageEndEvent: (params) => {
+          console.log("Text message ended", params.event.messageId);
+          // Clean up buffer
+          delete messageBufferRef.current[params.event.messageId];
+        },
+
+        // Custom events
+        onCustomEvent: (params) => {
+          console.log("Custom event received", params.event);
+
+          if (params.event.name === "on_interrupt") {
+            console.log("Agent interrupted", params);
+            console.log("Interrupt details");
+            const id = params.event.rawEvent.split("id='")[1]?.split("'")[0];
+            setInterrupted(id);
+          }
+        },
+      });
 
       console.log("Agent run result", result);
       console.log("Agent messages after run:", agent.messages);
@@ -388,7 +436,7 @@ const ChatInterface = () => {
   const abortRun = () => {
     const agent = agentRef.current;
 
-    if (agent && isLoading) {
+    if ((agent && isLoading) || (agent && agentRunning)) {
       console.log("Aborting agent run");
       agent.abortRun();
       setAgentRunning(false);

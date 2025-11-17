@@ -84,4 +84,4 @@ agui_demo/
 * Basic AG-UI agent ↔ UI communication
 * Simple LangGraph workflow
 * React interface wired to AG-UI client
-* Structure prepared for tool-calls + HITL (coming next)
+* HITL (Human-In-The-Loop)
