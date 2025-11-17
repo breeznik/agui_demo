@@ -1,4 +1,3 @@
-````
 # AG UI Demo
 
 A minimal demo showing how AG-UI connects an AI-agent backend with a frontend interface using LangGraph and React.
@@ -24,8 +23,8 @@ It standardizes:
 - Agent-driven UI actions  
 
 Docs & reference:  
-- AG-UI Documentation: https://docs.ag-ui.com  
-- Reference project: https://github.com/rrazvd/ag-ui-adk-react-chat  
+- [AG-UI Documentation](https://docs.ag-ui.com)  
+- [Reference project](https://github.com/rrazvd/ag-ui-adk-react-chat)  
 
 This demo implements the basic AG-UI flow using LangGraph + React.  
 Tool-calls and HITL will be added later.
@@ -40,7 +39,7 @@ Tool-calls and HITL will be added later.
 ```bash
 cd backend
 poetry install
-````
+```
 
 Create `.env`:
 
@@ -86,6 +85,3 @@ agui_demo/
 * Simple LangGraph workflow
 * React interface wired to AG-UI client
 * Structure prepared for tool-calls + HITL (coming next)
-
-```
-```
