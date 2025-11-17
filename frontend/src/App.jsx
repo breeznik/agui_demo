@@ -1,10 +1,11 @@
-import { useState } from "react";
-
+import ChatInterface from "./Chat/ChatInterface";
 
 function App() {
-  const [count, setCount] = useState(0);
-
-  return <></>;
+  return (
+    <>
+      <ChatInterface />
+    </>
+  );
 }
 
 export default App;

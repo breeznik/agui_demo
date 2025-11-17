@@ -26,11 +26,11 @@ class UserInfo(TypedDict):
 
 
 class UserInfoStruct(BaseModel):
-    full_name: Optional[str] = Field(None, description="user's full name")
-    email: Optional[str] = Field(None, description="user's email")
+    # full_name: Optional[str] = Field(None, description="user's full name")
+    # email: Optional[str] = Field(None, description="user's email")
     human_input: bool = Field(
         True,
-        description="This field need to be true to wait for human response once all the required details are collected make it false",
+        description="make it true to ask human response and false to not",
     )
     message: Optional[str] = Field(None, description="AI messages to human")
 
@@ -44,12 +44,10 @@ async def node1(state: State):
     messages = state.get("messages", [])
     state["current_node"] = "node1"
 
-    instruction = (
-        "your name is golu and your task is to collect userinfo - name and email"
-    )
+    instruction = "write 500 words pargraph on any topic"
     sm = SystemMessage(instruction)
     slm = local_model.with_structured_output(UserInfoStruct)
-    response: UserInfoStruct = slm.invoke(messages + [sm])
+    response: UserInfoStruct = await slm.ainvoke(messages + [sm])
     print("AI Response", response)
 
     user_info = state.get("userinfo", {})
@@ -60,7 +58,7 @@ async def node1(state: State):
     if response.human_input:
         print("running before interrupt")
         print("printing messages", messages)
-        result = interrupt({"message": response.message})
+        result = interrupt(response.message)
         print("after interrupt")
         state["messages"].append(AIMessage(response.message))
         state["messages"].append(HumanMessage(result))
