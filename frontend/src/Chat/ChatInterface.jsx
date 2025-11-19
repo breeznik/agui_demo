@@ -9,7 +9,7 @@ import styles from "./ChatInterface.module.css";
 // CONFIGURATION
 // ============================================================================
 
-const DEFAULT_AGENT_URL = "http://localhost:8000/agent";
+const DEFAULT_AGENT_URL = import.meta.env.VITE_AGENT_URL || "http://localhost:8000/agent";
 const THREAD_ID = uuidv4();
 const MAX_EVENTS = 50;
 const MAX_STATE_HISTORY = 25;
