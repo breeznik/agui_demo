@@ -1,10 +1,21 @@
 import { HttpAgent } from "@ag-ui/client";
 import { useEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-const initialAgentUrl = "http://localhost:8000/agent";
-const initialMessages = [];
-const threadId = uuidv4();
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const DEFAULT_AGENT_URL = "http://localhost:8000/agent";
+const THREAD_ID = uuidv4();
+const MAX_EVENTS = 50;
+const MAX_STATE_HISTORY = 25;
+
+// ============================================================================
+// STYLES
+// ============================================================================
 
 const styles = {
   appShell: {
@@ -47,21 +58,34 @@ const styles = {
   main: {
     flex: 1,
     display: "flex",
+    gap: "16px",
+    padding: "16px",
+    overflow: "hidden",
+  },
+  leftPanel: {
+    flex: 1,
+    display: "flex",
     flexDirection: "column",
-    padding: "24px",
+    gap: "16px",
+    minWidth: 0,
+  },
+  rightPanel: {
+    width: "380px",
+    display: "flex",
+    flexDirection: "column",
     gap: "16px",
     overflow: "hidden",
   },
   messageBoard: {
     flex: 1,
     overflowY: "auto",
-    borderRadius: "18px",
+    borderRadius: "16px",
     background: "rgba(15, 23, 42, 0.55)",
     border: "1px solid rgba(148, 163, 184, 0.08)",
-    padding: "24px",
+    padding: "20px",
     display: "flex",
     flexDirection: "column",
-    gap: "16px",
+    gap: "12px",
   },
   emptyState: {
     margin: "auto",
@@ -71,42 +95,46 @@ const styles = {
   },
   message: (isUser) => ({
     alignSelf: isUser ? "flex-end" : "flex-start",
-    maxWidth: "70%",
-    borderRadius: "16px",
-    padding: "12px 16px",
+    maxWidth: "75%",
+    borderRadius: "14px",
+    padding: "10px 14px",
     lineHeight: 1.5,
+    fontSize: "14px",
     background: isUser ? "#2563eb" : "rgba(15, 23, 42, 0.85)",
     border: isUser ? "none" : "1px solid rgba(148, 163, 184, 0.12)",
-    boxShadow: "0 10px 30px rgba(15, 23, 42, 0.35)",
+    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)",
   }),
+  messageContent: {
+    // Markdown content container
+  },
   messageMeta: {
-    marginTop: "6px",
+    marginTop: "4px",
     fontSize: "11px",
     opacity: 0.6,
   },
   composerShell: {
-    borderRadius: "18px",
-    padding: "18px",
+    borderRadius: "16px",
+    padding: "16px",
     background: "rgba(15, 23, 42, 0.75)",
     border: "1px solid rgba(148, 163, 184, 0.12)",
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
+    gap: "10px",
   },
   composerActions: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
+    gap: "10px",
   },
   textarea: {
     width: "100%",
-    minHeight: "90px",
+    minHeight: "70px",
     resize: "vertical",
-    borderRadius: "12px",
-    padding: "12px 14px",
-    fontSize: "15px",
-    lineHeight: 1.6,
+    borderRadius: "10px",
+    padding: "10px 12px",
+    fontSize: "14px",
+    lineHeight: 1.5,
     background: "rgba(15, 23, 42, 0.6)",
     border: "1px solid rgba(148, 163, 184, 0.18)",
     color: "#e2e8f0",
@@ -114,8 +142,8 @@ const styles = {
   },
   urlInput: {
     flex: 1,
-    borderRadius: "10px",
-    padding: "10px 12px",
+    borderRadius: "8px",
+    padding: "8px 12px",
     fontSize: "13px",
     background: "rgba(15, 23, 42, 0.6)",
     border: "1px solid rgba(148, 163, 184, 0.18)",
@@ -123,42 +151,333 @@ const styles = {
     outline: "none",
   },
   primaryButton: (isActive) => ({
-    borderRadius: "12px",
-    padding: "10px 18px",
+    borderRadius: "10px",
+    padding: "8px 16px",
     fontSize: "14px",
     fontWeight: 600,
     border: "none",
     cursor: isActive ? "pointer" : "not-allowed",
-    background: isActive
-      ? "linear-gradient(135deg, #2563eb, #7c3aed)"
-      : "#1e293b",
+    background: isActive ? "linear-gradient(135deg, #2563eb, #7c3aed)" : "#1e293b",
     color: "#f8fafc",
     transition: "transform 0.12s ease, box-shadow 0.12s ease",
-    boxShadow: isActive ? "0 12px 30px rgba(59, 130, 246, 0.35)" : "none",
+    boxShadow: isActive ? "0 8px 20px rgba(59, 130, 246, 0.3)" : "none",
   }),
-  ghostButton: {
-    borderRadius: "10px",
-    padding: "8px 14px",
-    fontSize: "13px",
-    border: "1px solid rgba(148, 163, 184, 0.2)",
-    background: "transparent",
-    color: "#94a3b8",
-    cursor: "pointer",
+  eventsPanel: {
+    borderRadius: "14px",
+    padding: "14px",
+    background: "rgba(15, 23, 42, 0.55)",
+    border: "1px solid rgba(148, 163, 184, 0.08)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    flex: 1,
+    minHeight: 0,
+  },
+  panelHeader: {
+    fontSize: "12px",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    opacity: 0.7,
+    marginBottom: "4px",
+  },
+  eventsStream: {
+    flex: 1,
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    paddingRight: 6,
+  },
+  eventsEmpty: {
+    fontSize: 12,
+    opacity: 0.5,
+    textAlign: "center",
+    padding: "20px 0",
+  },
+  eventItem: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    fontSize: 13,
+    padding: "10px 12px",
+    borderRadius: 10,
+    background: "rgba(2, 6, 23, 0.4)",
+    border: "1px solid rgba(148, 163, 184, 0.08)",
+  },
+  eventRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  eventDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 6,
+    background: "#38bdf8",
+    boxShadow: "0 0 8px rgba(56, 189, 248, 0.6)",
+    flexShrink: 0,
+  },
+  eventName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: 500,
+  },
+  eventTime: {
+    opacity: 0.5,
+    fontSize: 11,
+  },
+  eventStage: {
+    fontSize: 11,
+    opacity: 0.6,
+    marginLeft: 14,
+  },
+  progressBarOuter: {
+    marginLeft: 14,
+    width: "100%",
+    height: 4,
+    borderRadius: 4,
+    background: "rgba(148, 163, 184, 0.15)",
+    overflow: "hidden",
+  },
+  progressBarInner: {
+    display: "block",
+    height: "100%",
+    background: "linear-gradient(90deg, #38bdf8, #22c55e)",
+    transition: "width 0.3s ease",
+  },
+  statePanel: {
+    borderRadius: "14px",
+    padding: "14px",
+    background: "rgba(15, 23, 42, 0.55)",
+    border: "1px solid rgba(148, 163, 184, 0.08)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    maxHeight: "45%",
+    minHeight: 0,
+  },
+  stateGrid: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    overflowY: "auto",
+    paddingRight: 4,
+  },
+  stateRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    fontSize: 12,
+    padding: "8px 10px",
+    borderRadius: 8,
+    background: "rgba(2, 6, 23, 0.4)",
+    border: "1px solid rgba(148, 163, 184, 0.06)",
+  },
+  stateKey: {
+    opacity: 0.65,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  stateVal: {
+    fontWeight: 600,
+    fontSize: 13,
+    color: "#38bdf8",
   },
 };
 
-// Helpers to stream only the JSON `message` string value
-const findUnescapedQuoteIndex = (str) => {
+// ============================================================================
+// MARKDOWN STYLES
+// ============================================================================
+
+const markdownStyles = `
+  .markdown-content {
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  .markdown-content > *:first-child {
+    margin-top: 0;
+  }
+
+  .markdown-content > *:last-child {
+    margin-bottom: 0;
+  }
+
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3,
+  .markdown-content h4,
+  .markdown-content h5,
+  .markdown-content h6 {
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .markdown-content h1 {
+    font-size: 1.5em;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    padding-bottom: 4px;
+  }
+
+  .markdown-content h2 {
+    font-size: 1.3em;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    padding-bottom: 4px;
+  }
+
+  .markdown-content h3 {
+    font-size: 1.15em;
+  }
+
+  .markdown-content h4 {
+    font-size: 1.05em;
+  }
+
+  .markdown-content p {
+    margin: 8px 0;
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    margin: 8px 0;
+    padding-left: 24px;
+  }
+
+  .markdown-content li {
+    margin: 4px 0;
+  }
+
+  .markdown-content code {
+    background: rgba(100, 116, 139, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+
+  .markdown-content pre {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+    overflow-x: auto;
+  }
+
+  .markdown-content pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.85em;
+  }
+
+  .markdown-content blockquote {
+    border-left: 3px solid rgba(148, 163, 184, 0.3);
+    padding-left: 12px;
+    margin: 12px 0;
+    opacity: 0.9;
+    font-style: italic;
+  }
+
+  .markdown-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  .markdown-content th {
+    background: rgba(15, 23, 42, 0.6);
+    font-weight: 600;
+  }
+
+  .markdown-content tr:nth-child(even) {
+    background: rgba(15, 23, 42, 0.3);
+  }
+
+  .markdown-content a {
+    color: #60a5fa;
+    text-decoration: none;
+  }
+
+  .markdown-content a:hover {
+    text-decoration: underline;
+  }
+
+  .markdown-content hr {
+    border: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    margin: 16px 0;
+  }
+
+  .markdown-content strong {
+    font-weight: 600;
+  }
+
+  .markdown-content em {
+    font-style: italic;
+  }
+
+  .markdown-content img {
+    max-width: 100%;
+    border-radius: 4px;
+  }
+
+  .markdown-content input[type="checkbox"] {
+    margin-right: 6px;
+  }
+`;
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Generates a unique ID with timestamp and random component
+ */
+const generateUniqueId = (prefix = "id") => {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
+/**
+ * Formats snake_case keys to Title Case
+ */
+const formatKey = (key) => {
+  return key
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
+/**
+ * Finds the index of the first unescaped quote in a string
+ */
+const findUnescapedQuote = (str) => {
   for (let i = 0; i < str.length; i++) {
     if (str[i] !== '"') continue;
-    let bs = 0;
-    for (let j = i - 1; j >= 0 && str[j] === "\\"; j--) bs++;
-    if (bs % 2 === 0) return i; // not escaped
+    let backslashes = 0;
+    for (let j = i - 1; j >= 0 && str[j] === "\\"; j--) backslashes++;
+    if (backslashes % 2 === 0) return i;
   }
   return -1;
 };
 
-const unescapeJsonFragment = (str) =>
+/**
+ * Unescapes JSON string fragments
+ */
+const unescapeJson = (str) =>
   str
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "\r")
@@ -166,59 +485,84 @@ const unescapeJsonFragment = (str) =>
     .replace(/\\\\/g, "\\")
     .replace(/\\\"/g, '"');
 
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 const ChatInterface = () => {
-  const [agentUrl, setAgentUrl] = useState(initialAgentUrl);
+  // Agent configuration
+  const [agentUrl, setAgentUrl] = useState(DEFAULT_AGENT_URL);
+  const agentRef = useRef(null);
+  
+  // Message state
   const [messageText, setMessageText] = useState("");
   const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [agentRunning, setAgentRunning] = useState(false);
-  const agentRef = useRef(null);
   const messageBufferRef = useRef({});
+  
+  // Event and state tracking
+  const [events, setEvents] = useState([]);
+  const [statePanel, setStatePanel] = useState({});
+  
+  // Agent status
+  const [isLoading, setIsLoading] = useState(false);
   const [interrupted, setInterrupted] = useState(null);
-  const [lastRunId, setLastRunId] = useState(null);
+  
+  // Auto-scroll refs
+  const messagesEndRef = useRef(null);
+  const eventsEndRef = useRef(null);
+
+  // ============================================================================
+  // INJECT MARKDOWN STYLES
+  // ============================================================================
+
+  useEffect(() => {
+    const styleId = "markdown-styles";
+    if (!document.getElementById(styleId)) {
+      const styleElement = document.createElement("style");
+      styleElement.id = styleId;
+      styleElement.textContent = markdownStyles;
+      document.head.appendChild(styleElement);
+    }
+  }, []);
+
+  // ============================================================================
+  // AGENT INITIALIZATION
+  // ============================================================================
 
   useEffect(() => {
     const agent = new HttpAgent({
       url: agentUrl,
-      threadId,
-      initialMessages,
+      threadId: THREAD_ID,
+      initialMessages: [],
     });
 
     agentRef.current = agent;
-    console.log("HttpAgent initialised", { agentUrl, threadId });
 
     return () => {
-      if (agentRef.current) {
-        agentRef.current.abortRun?.();
-        agentRef.current = null;
-        console.log("HttpAgent disposed");
-      }
+      agentRef.current?.abortRun?.();
+      agentRef.current = null;
     };
   }, [agentUrl]);
 
+  // ============================================================================
+  // AUTO-SCROLL EFFECTS
+  // ============================================================================
+
   useEffect(() => {
-    console.log("Composer text changed", messageText);
-  }, [messageText]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const sendMessage = async (rawText) => {
-    const agent = agentRef.current;
-    const trimmed = rawText.trim();
+  useEffect(() => {
+    eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [events]);
 
-    if (!trimmed) {
-      console.log("Ignoring empty payload");
-      return;
-    }
+  // ============================================================================
+  // MESSAGE SENDING
+  // ============================================================================
 
-    if (!agent) {
-      console.warn("Agent instance not ready");
-      return;
-    }
-
-    // Check if agent is running before starting new run
-    if (agentRunning) {
-      console.log("Agent still running, please wait");
-      return;
-    }
+  const sendMessage = async (text) => {
+    const trimmed = text.trim();
+    if (!trimmed || !agentRef.current || isLoading) return;
 
     const userMessage = {
       id: `user-${Date.now()}`,
@@ -227,304 +571,387 @@ const ChatInterface = () => {
       timestamp: new Date(),
     };
 
-    agent.messages.push({
+    // Add to agent's message history and UI
+    agentRef.current.messages.push({
       role: "user",
       content: trimmed,
       id: userMessage.id,
     });
-
-    console.log("Dispatching user message", userMessage);
     setMessages((prev) => [...prev, userMessage]);
     setMessageText("");
-
-    // Set running state BEFORE calling runAgent
-    setAgentRunning(true);
     setIsLoading(true);
 
+    // Build payload for interrupted resume
+    const payload = interrupted
+      ? {
+          resume: { interruptId: interrupted, payload: trimmed },
+          forwardedProps: { command: { resume: trimmed } },
+        }
+      : {};
+
+    if (interrupted) setInterrupted(null);
+
     try {
-      console.log("Agent messages before run:", agent.messages);
-      console.log("Agent state before run:", agent.state);
-
-      const payload = {};
-      if (interrupted) {
-        payload.resume = {
-          interruptId: interrupted,
-          payload: userMessage.text,
-        };
-        payload.forwardedProps = {
-          command: {
-            resume: userMessage.text,
-          },
-        };
-        // Remove: payload.runId = lastRunId;
-        setInterrupted(null);
-        setLastRunId(null);
-      }
-      const result = await agent.runAgent(payload, {
-        // Run lifecycle events
-        onRunStartedEvent: () => {
-          console.log("Agent run started");
-          setAgentRunning(true);
-          setIsLoading(true);
-        },
-        onRunFinishedEvent: () => {
-          console.log("Agent run finished");
-          // Clear all buffers
+      const result = await agentRef.current.runAgent(payload, {
+        onRunStartedEvent: () => setIsLoading(true),
+        onRunFinishedEvent: () => (messageBufferRef.current = {}),
+        onRunErrorEvent: () => {
           messageBufferRef.current = {};
-        },
-        onRunErrorEvent: (params) => {
-          console.error("Agent run error", params.event);
-          // Clear all buffers on error
-          messageBufferRef.current = {};
-          setAgentRunning(false);
           setIsLoading(false);
         },
-        onRunFinalized: (params) => {
-          setLastRunId(params.input.runId);
-          console.log("Run finalized", params);
-          setAgentRunning(false);
-          setIsLoading(false);
-
-          // agent.abortController.abort()
-          // agent.current.abortRun();
-        },
-
-        // Message streaming events
-        onTextMessageStartEvent: (params) => {
-          console.log("Text message started", params.event.messageId);
-          // Initialize streaming state for this message
-          messageBufferRef.current[params.event.messageId] = {
-            buf: "",
-            capturing: false,
-            capturedText: "",
-            done: false,
-          };
-
-          const newMessage = {
-            id: params.event.messageId,
-            text: "",
-            sender: "agent",
-            timestamp: new Date(),
-            type: "text",
-          };
-
-          console.log("Agent text message start", params.event);
-          setMessages((prev) => [...prev, newMessage]);
-        },
-        onTextMessageContentEvent: (params) => {
-          try {
-            console.log("Agent text delta", params.event);
-            const { delta, messageId } = params.event;
-            const state =
-              messageBufferRef.current[messageId] ||
-              (messageBufferRef.current[messageId] = {
-                buf: "",
-                capturing: false,
-                capturedText: "",
-                done: false,
-              });
-
-            // Get string chunk
-            let chunk = "";
-            if (typeof delta === "string") {
-              chunk = delta;
-            } else {
-              const rawChunk = params.event?.rawEvent?.data?.chunk?.content;
-              if (typeof rawChunk === "string") chunk = rawChunk;
-              else if (Array.isArray(rawChunk)) {
-                chunk = rawChunk
-                  .map((p) =>
-                    typeof p === "string"
-                      ? p
-                      : typeof p?.text === "string"
-                      ? p.text
-                      : typeof p?.content === "string"
-                      ? p.content
-                      : ""
-                  )
-                  .join("");
-              } else if (rawChunk && typeof rawChunk === "object") {
-                if (typeof rawChunk.text === "string") chunk = rawChunk.text;
-                else if (typeof rawChunk.content === "string")
-                  chunk = rawChunk.content;
-              }
-            }
-
-            if (!chunk || state.done) return;
-
-            state.buf += chunk;
-
-            // If not yet capturing, look for start of message value
-            if (!state.capturing) {
-              const startMatch = state.buf.match(/\"message\"\s*:\s*\"/);
-              if (!startMatch) return; // ignore anything before message key
-
-              state.capturing = true;
-              const startIndex =
-                state.buf.indexOf(startMatch[0]) + startMatch[0].length;
-              const afterStart = state.buf.slice(startIndex);
-              const endIdx = findUnescapedQuoteIndex(afterStart);
-              const frag =
-                endIdx >= 0 ? afterStart.slice(0, endIdx) : afterStart;
-              const toAppend = unescapeJsonFragment(frag);
-              if (toAppend) {
-                state.capturedText += toAppend;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === messageId ? { ...m, text: state.capturedText } : m
-                  )
-                );
-              }
-              if (endIdx >= 0) state.done = true; // closed the string
-              return;
-            }
-
-            // Already capturing: append until closing quote
-            const endIdx = findUnescapedQuoteIndex(chunk);
-            const frag = endIdx >= 0 ? chunk.slice(0, endIdx) : chunk;
-            const toAppend = unescapeJsonFragment(frag);
-            if (toAppend) {
-              state.capturedText += toAppend;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === messageId ? { ...m, text: state.capturedText } : m
-                )
-              );
-            }
-            if (endIdx >= 0) state.done = true;
-          } catch (error) {
-            console.error("Error processing text delta:", error);
-          }
-        },
-        onTextMessageEndEvent: (params) => {
-          console.log("Text message ended", params.event.messageId);
-          // Clean up buffer
-          delete messageBufferRef.current[params.event.messageId];
-        },
-
-        // Custom events
-        onCustomEvent: (params) => {
-          console.log("Custom event received", params.event);
-
-          if (params.event.name === "on_interrupt") {
-            console.log("Agent interrupted", params);
-            console.log("Interrupt details");
-            const id = params.event.rawEvent.split("id='")[1]?.split("'")[0];
-            setInterrupted(id);
-          }
-        },
+        onRunFinalized: () => setIsLoading(false),
+        onTextMessageStartEvent: handleMessageStart,
+        onTextMessageContentEvent: handleMessageContent,
+        onTextMessageEndEvent: handleMessageEnd,
+        onCustomEvent: handleCustomEvent,
       });
 
-      console.log("Agent run result", result);
-      console.log("Agent messages after run:", agent.messages);
-      console.log("Agent state after run:", agent.state);
+      // Add any non-streamed messages from result
+      addNonStreamedMessages(result?.newMessages);
     } catch (error) {
-      console.error("Error in sendMessage", error);
-      // Only log the error, don't treat it as fatal since streaming might have completed
-      if (!error.message?.includes("Error in input stream")) {
-        console.error("Unexpected error:", error);
+      console.error("Error sending message:", error);
+      setIsLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // MESSAGE STREAMING HANDLERS
+  // ============================================================================
+
+  const handleMessageStart = (params) => {
+    const messageId = params.event.messageId;
+    
+    messageBufferRef.current[messageId] = {
+      buf: "",
+      capturing: false,
+      capturedText: "",
+      done: false,
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: messageId,
+        text: "",
+        sender: "agent",
+        timestamp: new Date(),
+      },
+    ]);
+  };
+
+  const handleMessageContent = (params) => {
+    const { messageId, delta } = params.event;
+    const state = messageBufferRef.current[messageId];
+    if (!state || state.done) return;
+
+    // Extract chunk from various possible formats
+    let chunk = "";
+    if (typeof delta === "string") {
+      chunk = delta;
+    } else {
+      const rawChunk = params.event?.rawEvent?.data?.chunk?.content;
+      if (typeof rawChunk === "string") {
+        chunk = rawChunk;
+      } else if (Array.isArray(rawChunk)) {
+        chunk = rawChunk
+          .map((p) =>
+            typeof p === "string"
+              ? p
+              : p?.text || p?.content || ""
+          )
+          .join("");
+      } else if (rawChunk && typeof rawChunk === "object") {
+        chunk = rawChunk.text || rawChunk.content || "";
       }
-      setAgentRunning(false);
-      setIsLoading(false);
     }
-  };
 
-  const sendInputMessage = () => {
-    sendMessage(messageText);
-  };
+    if (!chunk) return;
+    state.buf += chunk;
 
-  const abortRun = () => {
-    const agent = agentRef.current;
+    // Start capturing when we find "message":"
+    if (!state.capturing) {
+      const startMatch = state.buf.match(/\"message\"\s*:\s*\"/);
+      if (!startMatch) return;
 
-    if ((agent && isLoading) || (agent && agentRunning)) {
-      console.log("Aborting agent run");
-      agent.abortRun();
-      setAgentRunning(false);
-      setIsLoading(false);
-    }
-  };
-
-  const onInputButtonClick = () => {
-    if (isLoading) {
-      abortRun();
+      state.capturing = true;
+      const startIndex = state.buf.indexOf(startMatch[0]) + startMatch[0].length;
+      const afterStart = state.buf.slice(startIndex);
+      const endIdx = findUnescapedQuote(afterStart);
+      const fragment = endIdx >= 0 ? afterStart.slice(0, endIdx) : afterStart;
+      const text = unescapeJson(fragment);
+      
+      if (text) {
+        state.capturedText += text;
+        updateMessageText(messageId, state.capturedText);
+      }
+      if (endIdx >= 0) state.done = true;
       return;
     }
 
-    sendInputMessage();
+    // Continue capturing until closing quote
+    const endIdx = findUnescapedQuote(chunk);
+    const fragment = endIdx >= 0 ? chunk.slice(0, endIdx) : chunk;
+    const text = unescapeJson(fragment);
+    
+    if (text) {
+      state.capturedText += text;
+      updateMessageText(messageId, state.capturedText);
+    }
+    if (endIdx >= 0) state.done = true;
   };
 
-  const handleKeyPress = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      onInputButtonClick();
+  const handleMessageEnd = (params) => {
+    delete messageBufferRef.current[params.event.messageId];
+  };
+
+  const normalizeText = (text) => {
+    if (!text) return "";
+    return text
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\\"/g, '"');
+  };
+
+  const updateMessageText = (messageId, text) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, text: normalizeText(text) } : m))
+    );
+  };
+
+  // ============================================================================
+  // CUSTOM EVENT HANDLER
+  // ============================================================================
+
+  const handleCustomEvent = (params) => {
+    const eventName = params.event?.name || "event";
+    
+    // Handle interrupt events
+    if (eventName === "on_interrupt") {
+      const id = params.event.rawEvent.split("id='")[1]?.split("'")[0];
+      setInterrupted(id);
+      addEvent({
+        name: "Agent interrupted",
+        detail: id,
+      });
+      return;
+    }
+
+    // Extract event data
+    const payload = params.event?.value || {};
+    const detail = payload?.info || params.event?.rawEvent || "";
+    const progress = typeof payload?.progress === "number" ? payload.progress : undefined;
+    const stage = payload?.stage;
+
+    // Add to event ticker
+    addEvent({ name: eventName, detail, stage, progress });
+
+    // Update state panel if state data provided
+    if (payload?.state && typeof payload.state === "object") {
+      setStatePanel(payload.state);
+    }
+  };
+
+  const addEvent = (eventData) => {
+    setEvents((prev) =>
+      [
+        ...prev,
+        {
+          id: generateUniqueId("evt"),
+          timestamp: new Date(),
+          ...eventData,
+        },
+      ].slice(-MAX_EVENTS)
+    );
+  };
+
+  // ============================================================================
+  // NON-STREAMED MESSAGE HANDLER
+  // ============================================================================
+
+  const addNonStreamedMessages = (newMessages) => {
+    if (!newMessages || newMessages.length === 0) return;
+
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const existingTexts = new Set(
+        prev.map((m) => m.text?.trim()).filter(Boolean)
+      );
+
+      const toAdd = newMessages
+        .filter((msg) => {
+          if (existingIds.has(msg.id)) return false;
+          if (!msg.content || !msg.content.trim()) return false;
+          if (existingTexts.has(normalizeText(msg.content).trim())) return false;
+          if (msg.role === "user") return false;
+          return true;
+        })
+        .map((msg) => ({
+          id: msg.id,
+          text: normalizeText(msg.content),
+          sender: "agent",
+          timestamp: new Date(),
+        }));
+
+      return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+    });
+  };
+
+  // ============================================================================
+  // UI HANDLERS
+  // ============================================================================
+
+  const handleSendClick = () => {
+    if (isLoading) {
+      agentRef.current?.abortRun();
+      setIsLoading(false);
+    } else {
+      sendMessage(messageText);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendClick();
     }
   };
 
   const isSendEnabled = messageText.trim().length > 0 && !isLoading;
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   return (
     <div style={styles.appShell}>
+      {/* Header */}
       <header style={styles.header}>
-        <div style={styles.headerTitle}>AG UI Experimental Console</div>
+        <div style={styles.headerTitle}>Agent Chat</div>
         <div style={styles.statusPill}>
-          <span style={styles.statusDot(agentRunning)} />
-          {agentRunning ? "Agent running" : "Agent idle"}
+          <span style={styles.statusDot(isLoading)} />
+          {isLoading ? "Agent running" : "Agent idle"}
         </div>
       </header>
 
       <main style={styles.main}>
-        <section style={styles.messageBoard}>
-          {messages.length === 0 ? (
-            <div style={styles.emptyState}>
-              Start a conversation to see the live event stream here.
-            </div>
-          ) : (
-            messages.map((message) => {
-              const isUser = message.sender === "user";
-              const timestampLabel = message.timestamp
-                ? new Date(message.timestamp).toLocaleTimeString()
-                : "";
+        {/* Left Panel: Chat */}
+        <section style={styles.leftPanel}>
+          {/* Messages */}
+          <div style={styles.messageBoard}>
+            {messages.length === 0 ? (
+              <div style={styles.emptyState}>Start a conversation with the agent.</div>
+            ) : (
+              messages
+                .filter((msg) => msg.text && msg.text.trim())
+                .map((msg) => {
+                  const isUser = msg.sender === "user";
+                  return (
+                    <div key={msg.id} style={styles.message(isUser)}>
+                      <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.text}
+                        </ReactMarkdown>
+                      </div>
+                      <div style={styles.messageMeta}>
+                        {isUser ? "You" : "Agent"}
+                        {msg.timestamp && ` • ${msg.timestamp.toLocaleTimeString()}`}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
 
-              return (
-                <div key={message.id} style={styles.message(isUser)}>
-                  <div>{message.text}</div>
-                  <div style={styles.messageMeta}>
-                    {isUser ? "You" : "Agent"}
-                    {timestampLabel ? ` • ${timestampLabel}` : ""}
-                  </div>
-                </div>
-              );
-            })
-          )}
+          {/* Composer */}
+          <div style={styles.composerShell}>
+            <textarea
+              style={styles.textarea}
+              placeholder="Type your message..."
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={handleKeyPress}
+              disabled={isLoading}
+            />
+            <div style={styles.composerActions}>
+              <input
+                style={styles.urlInput}
+                type="text"
+                value={agentUrl}
+                onChange={(e) => setAgentUrl(e.target.value)}
+                placeholder="Agent endpoint URL"
+              />
+              <button
+                type="button"
+                style={styles.primaryButton(isSendEnabled || isLoading)}
+                onClick={handleSendClick}
+                disabled={!isSendEnabled && !isLoading}
+              >
+                {isLoading ? "Abort" : "Send"}
+              </button>
+            </div>
+          </div>
         </section>
 
-        <section style={styles.composerShell}>
-          <textarea
-            style={styles.textarea}
-            placeholder="Send a message to the agent..."
-            value={messageText}
-            onChange={(event) => setMessageText(event.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={isLoading}
-          />
+        {/* Right Panel: Events & State */}
+        <section style={styles.rightPanel}>
+          {/* Events */}
+          <div style={styles.eventsPanel}>
+            <div style={styles.panelHeader}>Live Events</div>
+            <div style={styles.eventsStream}>
+              {events.length === 0 ? (
+                <div style={styles.eventsEmpty}>No events yet</div>
+              ) : (
+                events.map((e) => (
+                  <div key={e.id} style={styles.eventItem}>
+                    <div style={styles.eventRow}>
+                      <span style={styles.eventDot} />
+                      <span style={styles.eventName}>{e.name}</span>
+                      <span style={styles.eventTime}>
+                        {e.timestamp.toLocaleTimeString()}
+                      </span>
+                    </div>
+                    {e.stage && <div style={styles.eventStage}>{e.stage}</div>}
+                    {typeof e.progress === "number" && (
+                      <div style={styles.progressBarOuter}>
+                        <span
+                          style={{
+                            ...styles.progressBarInner,
+                            width: `${Math.max(0, Math.min(100, e.progress))}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+              <div ref={eventsEndRef} />
+            </div>
+          </div>
 
-          <div style={styles.composerActions}>
-            <input
-              style={styles.urlInput}
-              type="text"
-              value={agentUrl}
-              onChange={(event) => setAgentUrl(event.target.value)}
-              placeholder="Agent endpoint"
-            />
-
-            <button
-              type="button"
-              style={styles.primaryButton(isSendEnabled || isLoading)}
-              onClick={onInputButtonClick}
-              disabled={!isSendEnabled && !isLoading}
-            >
-              {isLoading ? "Abort run" : "Send message"}
-            </button>
+          {/* State */}
+          <div style={styles.statePanel}>
+            <div style={styles.panelHeader}>State</div>
+            {Object.keys(statePanel).length === 0 ? (
+              <div style={styles.eventsEmpty}>No state yet</div>
+            ) : (
+              <div style={styles.stateGrid}>
+                {Object.entries(statePanel)
+                  .filter(([, value]) => value !== null && value !== undefined && value !== "")
+                  .map(([key, value]) => (
+                    <div key={key} style={styles.stateRow}>
+                      <span style={styles.stateKey}>{formatKey(key)}</span>
+                      <span style={styles.stateVal}>
+                        {typeof value === "object" && value !== null
+                          ? JSON.stringify(value)
+                          : String(value)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </section>
       </main>
